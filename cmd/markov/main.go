@@ -22,7 +22,7 @@ func main() {
 	seed := args.Prompt
 
 	rand.Seed(time.Now().UTC().UnixNano()) // always seed random!
-	hist, err := LoadOrCreateHistogram(args.InputFilename, args.N)
+	hist, err := LoadOrCreateHistogram(args.InputFilename, args.N, args.Lowercase)
 	PanicOnError(err)
 	sample := GetSamplerFromStringHistogram(hist)
 	// PrintStringHistogram(hist)
@@ -47,7 +47,7 @@ func PanicOnError(err error) {
 	}
 }
 
-func BuildStringHistogram(r io.Reader, n int) *StringHistogram {
+func BuildStringHistogram(r io.Reader, n int, lowercase bool) *StringHistogram {
 	frequency := make(StringHistogram)
 	scanner := bufio.NewScanner(r)
 	scanner.Split(bufio.ScanRunes)
@@ -57,9 +57,12 @@ func BuildStringHistogram(r io.Reader, n int) *StringHistogram {
 		buf = append(buf, text)
 		if len(buf) > n*2+1 {
 			buf = buf[1:]
-			lower := strings.ToLower(strings.Join(buf, ""))
-			gram := lower[0:n]
-			nextGram := lower[n : len(lower)-1]
+			tmp := strings.Join(buf, "")
+			if lowercase {
+				tmp = strings.ToLower(tmp)
+			}
+			gram := tmp[0:n]
+			nextGram := tmp[n : len(tmp)-1]
 			// fmt.Printf("lower: %v, gram: %v, nextGram: %v\n", lower, gram, nextGram)
 			if _, ok := frequency[gram]; !ok {
 				frequency[gram] = make(map[string]uint32)
@@ -101,8 +104,12 @@ func PrintStringHistogram(h *StringHistogram) {
 	}
 }
 
-func LoadOrCreateHistogram(filename string, n int) (*StringHistogram, error) {
-	cacheFilename := fmt.Sprintf("%v.cache.n%d.json", filename, n)
+func LoadOrCreateHistogram(filename string, n int, lowercase bool) (*StringHistogram, error) {
+	lowercaseString := ""
+	if lowercase {
+		lowercaseString = "lower"
+	}
+	cacheFilename := fmt.Sprintf("%v.cache.n%d%s.json", filename, n, lowercaseString)
 	cacheFile, err := os.Open(cacheFilename)
 	// Load from cache
 	if err == nil {
@@ -124,7 +131,7 @@ func LoadOrCreateHistogram(filename string, n int) (*StringHistogram, error) {
 			return nil, err
 		}
 		defer file.Close()
-		hist := BuildStringHistogram(file, n)
+		hist := BuildStringHistogram(file, n, lowercase)
 		err = CacheHistogram(hist, cacheFilename)
 		if err != nil {
 			return nil, err
@@ -153,14 +160,17 @@ type arguments struct {
 	Prompt        string
 	N             int
 	MaxCharacters int
+	Lowercase     bool
 }
 
 func parseArgs() arguments {
 	corpusFilename := flag.StringP("corpus", "i", "", "The input corpus to build the n-gram histogram with.")
 	prompt := flag.StringP("prompt", "p", "hello", "The prompt to (optional).")
-	n := flag.IntP("n-gram-length", "n", 1, "The number of characters to use for each n-gram.")
+	n := flag.IntP("n-gram-length", "n", 3, "The number of characters to use for each n-gram.")
 	maxCharacters := flag.IntP("max-characters", "c", 1000, "The maximum number of characters to generate. Fewer characters may be generated if the sequence encounters an n-gram that has no next n-grams in the dataset.")
 	help := flag.BoolP("help", "h", false, "Show this screen.")
+	lowercase := flag.BoolP("lowercase", "l", false, "Convert text to lowercase. Lowers the complexity of the sampling task, and may produce better results depending on the corpus.")
+
 	flag.Parse()
 	if flag.NArg() != 0 || *help {
 		flag.Usage()
@@ -184,6 +194,7 @@ func parseArgs() arguments {
 		Prompt:        *prompt,
 		N:             *n,
 		MaxCharacters: *maxCharacters,
+		Lowercase:     *lowercase,
 	}
 }
 
