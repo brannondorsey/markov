@@ -20,8 +20,10 @@ Below is a summary of the full usage of the `markov` command.
 
 ```
 Usage of markov:
-  -i, --corpus string       The input corpus to build the n-gram histogram with.
-  -h, --help                Show this screen.
-  -n, --n-gram-length int   The number of characters to use for each n-gram. (default 1)
-  -p, --prompt string       The prompt to (optional). (default "hello")
+  -i, --corpus string        The input corpus to build the n-gram histogram with.
+  -h, --help                 Show this screen.
+  -l, --lowercase            Convert text to lowercase. Lowers the complexity of the sampling task, and may produce better results depending on the corpus.
+  -c, --max-characters int   The maximum number of characters to generate. Fewer characters may be generated if the sequence encounters an n-gram that has no next n-grams in the dataset. (default 1000)
+  -n, --n-gram-length int    The number of characters to use for each n-gram. (default 3)
+  -p, --prompt string        The prompt to (optional). (default "hello")
 ```
