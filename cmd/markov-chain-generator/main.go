@@ -8,22 +8,31 @@ import (
 	"io/ioutil"
 	"math/rand"
 	"os"
+	"runtime"
 	"strings"
 	"time"
 
 	wr "github.com/mroth/weightedrand"
+	flag "github.com/spf13/pflag"
 )
 
-const NGRAMS = 3
+var NGRAMS = 1
+
 const MAX_CHARACTERS_TO_GENERATE = 1000
 
 func main() {
+
+	args := parseArgs()
+	NGRAMS = args.N
+	seed := args.Prompt
+
 	rand.Seed(time.Now().UTC().UnixNano()) // always seed random!
-	filename := "data/rockyou-train.txt"
-	hist, err := LoadOrCreateHistogram(filename, NGRAMS)
+	hist, err := LoadOrCreateHistogram(args.InputFilename, NGRAMS)
 	PanicOnError(err)
 	sample := GetSamplerFromStringHistogram(hist)
-	seed := "once upon a time in wonderland "
+	// PrintStringHistogram(hist)
+	// PrintMemUsage()
+	// runtime.GC()
 	for i := 0; i < MAX_CHARACTERS_TO_GENERATE; i++ {
 		next, err := sample(seed[len(seed)-NGRAMS:])
 		if err != nil {
@@ -31,10 +40,11 @@ func main() {
 		}
 		seed += next
 	}
+	// PrintMemUsage()
 	fmt.Println(seed)
 }
 
-type StringHistogram = map[string]map[string]uint
+type StringHistogram = map[string]map[string]uint32
 
 func PanicOnError(err error) {
 	if err != nil {
@@ -57,7 +67,7 @@ func BuildStringHistogram(r io.Reader, n int) *StringHistogram {
 			nextGram := lower[n : len(lower)-1]
 			// fmt.Printf("lower: %v, gram: %v, nextGram: %v\n", lower, gram, nextGram)
 			if _, ok := frequency[gram]; !ok {
-				frequency[gram] = make(map[string]uint)
+				frequency[gram] = make(map[string]uint32)
 			}
 			frequency[gram][nextGram]++
 		}
@@ -75,7 +85,7 @@ func GetSamplerFromStringHistogram(hist *StringHistogram) func(string) (string, 
 			// fmt.Println(i, key, (*hist)[key])
 			choices[i] = wr.Choice{
 				Item:   key,
-				Weight: nextGrams[key],
+				Weight: uint(nextGrams[key]),
 			}
 			i++
 		}
@@ -141,4 +151,60 @@ func CacheHistogram(histogram *StringHistogram, filename string) error {
 	}
 	_, err = file.WriteString(string(serialized))
 	return err
+}
+
+type arguments struct {
+	InputFilename string
+	Prompt        string
+	N             int
+}
+
+func parseArgs() arguments {
+	corpusFilename := flag.StringP("corpus", "i", "", "The input corpus to build the n-gram histogram with.")
+	prompt := flag.StringP("prompt", "p", "hello", "The prompt to (optional).")
+	n := flag.IntP("n-gram-length", "n", 1, "The number of characters to use for each n-gram.")
+	help := flag.BoolP("help", "h", false, "Show this screen.")
+	flag.Usage = func() {
+		fmt.Printf("Usage: %s [OPTIONS] ...\n", os.Args[0])
+		flag.PrintDefaults()
+	}
+	flag.Parse()
+	if *n < 1 || *n > 6 {
+		fmt.Printf("[ERROR] n-gram-length must be between 1 and 5. Received \"%s\"\n", *n)
+		os.Exit(1)
+	}
+	if *corpusFilename == "" {
+		fmt.Printf("[ERROR] The --corpus flag is required.\n", *corpusFilename)
+		flag.Usage()
+		os.Exit(1)
+	}
+	if _, err := os.Stat(*corpusFilename); os.IsNotExist(err) {
+		fmt.Printf("[ERROR] \"%s\" does not exist.\n", *corpusFilename)
+		os.Exit(1)
+	}
+	if flag.NArg() != 0 || *help {
+		flag.Usage()
+		os.Exit(1)
+	}
+	return arguments{
+		InputFilename: *corpusFilename,
+		Prompt:        *prompt,
+		N:             *n,
+	}
+}
+
+// PrintMemUsage outputs the current, total and OS memory being used. As well as the number
+// of garage collection cycles completed.
+func PrintMemUsage() {
+	var m runtime.MemStats
+	runtime.ReadMemStats(&m)
+	// For info on each, see: https://golang.org/pkg/runtime/#MemStats
+	fmt.Printf("Alloc = %v MiB", bToMb(m.Alloc))
+	fmt.Printf("\tTotalAlloc = %v MiB", bToMb(m.TotalAlloc))
+	fmt.Printf("\tSys = %v MiB", bToMb(m.Sys))
+	fmt.Printf("\tNumGC = %v\n", m.NumGC)
+}
+
+func bToMb(b uint64) uint64 {
+	return b / 1024 / 1024
 }
