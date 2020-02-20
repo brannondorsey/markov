@@ -16,25 +16,20 @@ import (
 	flag "github.com/spf13/pflag"
 )
 
-var NGRAMS = 1
-
-const MAX_CHARACTERS_TO_GENERATE = 1000
-
 func main() {
 
 	args := parseArgs()
-	NGRAMS = args.N
 	seed := args.Prompt
 
 	rand.Seed(time.Now().UTC().UnixNano()) // always seed random!
-	hist, err := LoadOrCreateHistogram(args.InputFilename, NGRAMS)
+	hist, err := LoadOrCreateHistogram(args.InputFilename, args.N)
 	PanicOnError(err)
 	sample := GetSamplerFromStringHistogram(hist)
 	// PrintStringHistogram(hist)
 	// PrintMemUsage()
 	// runtime.GC()
-	for i := 0; i < MAX_CHARACTERS_TO_GENERATE; i++ {
-		next, err := sample(seed[len(seed)-NGRAMS:])
+	for i := 0; i < args.MaxCharacters; i++ {
+		next, err := sample(seed[len(seed)-args.N:])
 		if err != nil {
 			break
 		}
@@ -129,7 +124,7 @@ func LoadOrCreateHistogram(filename string, n int) (*StringHistogram, error) {
 			return nil, err
 		}
 		defer file.Close()
-		hist := BuildStringHistogram(file, NGRAMS)
+		hist := BuildStringHistogram(file, n)
 		err = CacheHistogram(hist, cacheFilename)
 		if err != nil {
 			return nil, err
@@ -157,12 +152,14 @@ type arguments struct {
 	InputFilename string
 	Prompt        string
 	N             int
+	MaxCharacters int
 }
 
 func parseArgs() arguments {
 	corpusFilename := flag.StringP("corpus", "i", "", "The input corpus to build the n-gram histogram with.")
 	prompt := flag.StringP("prompt", "p", "hello", "The prompt to (optional).")
 	n := flag.IntP("n-gram-length", "n", 1, "The number of characters to use for each n-gram.")
+	maxCharacters := flag.IntP("max-characters", "c", 1000, "The maximum number of characters to generate. Fewer characters may be generated if the sequence encounters an n-gram that has no next n-grams in the dataset.")
 	help := flag.BoolP("help", "h", false, "Show this screen.")
 	flag.Parse()
 	if flag.NArg() != 0 || *help {
@@ -186,6 +183,7 @@ func parseArgs() arguments {
 		InputFilename: *corpusFilename,
 		Prompt:        *prompt,
 		N:             *n,
+		MaxCharacters: *maxCharacters,
 	}
 }
 
