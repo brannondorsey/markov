@@ -1,2 +1,4 @@
 .DS_Store
 data/*
+build/bin/*
+!build/bin/.gitkeep

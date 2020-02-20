@@ -164,26 +164,22 @@ func parseArgs() arguments {
 	prompt := flag.StringP("prompt", "p", "hello", "The prompt to (optional).")
 	n := flag.IntP("n-gram-length", "n", 1, "The number of characters to use for each n-gram.")
 	help := flag.BoolP("help", "h", false, "Show this screen.")
-	flag.Usage = func() {
-		fmt.Printf("Usage: %s [OPTIONS] ...\n", os.Args[0])
-		flag.PrintDefaults()
-	}
 	flag.Parse()
+	if flag.NArg() != 0 || *help {
+		flag.Usage()
+		os.Exit(1)
+	}
 	if *n < 1 || *n > 6 {
-		fmt.Printf("[ERROR] n-gram-length must be between 1 and 5. Received \"%s\"\n", *n)
+		fmt.Printf("[ERROR] The value of --n-gram-length must be between 1 and 6. Received %d.\n", *n)
 		os.Exit(1)
 	}
 	if *corpusFilename == "" {
-		fmt.Printf("[ERROR] The --corpus flag is required.\n", *corpusFilename)
+		fmt.Printf("[ERROR] The --corpus flag is required.\n")
 		flag.Usage()
 		os.Exit(1)
 	}
 	if _, err := os.Stat(*corpusFilename); os.IsNotExist(err) {
-		fmt.Printf("[ERROR] \"%s\" does not exist.\n", *corpusFilename)
-		os.Exit(1)
-	}
-	if flag.NArg() != 0 || *help {
-		flag.Usage()
+		fmt.Printf("[ERROR] Corpus file \"%s\" does not exist.\n", *corpusFilename)
 		os.Exit(1)
 	}
 	return arguments{
