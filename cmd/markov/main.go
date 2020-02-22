@@ -49,19 +49,19 @@ func GetSeparator(words bool) string {
 }
 
 // GetSeed splits prompt into n-grams if prompt is usable or returns a random n-gram if not
-func GetSeed(prompt string, n int, lower bool, words bool, hist *StringHistogram) []string {
+func GetSeed(prompt string, n int, lower bool, words bool, hist StringHistogram) []string {
 	// If the prompt contains at least one n-gram's worth of text
 	if promptSplit := strings.Split(prompt, GetSeparator(words)); prompt != "" && len(promptSplit) >= 1 {
 		// And the ngram appears in the corpus histogram
-		if _, ok := (*hist)[promptSplit[len(promptSplit)-1]]; ok {
+		if _, ok := hist[promptSplit[len(promptSplit)-1]]; ok {
 			// Use the prompt as is
 			return promptSplit
 		}
 	}
 	var seed []string
 	// Use the first random ngram that contains at least one child
-	for randNgram := range *hist {
-		if len((*hist)[randNgram]) < 1 {
+	for randNgram := range hist {
+		if len(hist[randNgram]) < 1 {
 			continue
 		}
 		seed = []string{randNgram}
@@ -70,7 +70,7 @@ func GetSeed(prompt string, n int, lower bool, words bool, hist *StringHistogram
 	return seed
 }
 
-func BuildStringHistogram(r io.Reader, n int, lowercase bool, words bool) *StringHistogram {
+func BuildStringHistogram(r io.Reader, n int, lowercase bool, words bool) StringHistogram {
 	frequency := make(StringHistogram)
 	scanner := bufio.NewScanner(r)
 	separator := GetSeparator(words)
@@ -98,17 +98,17 @@ func BuildStringHistogram(r io.Reader, n int, lowercase bool, words bool) *Strin
 			buf = buf[1:]
 		}
 	}
-	return &frequency
+	return frequency
 }
 
-func GetSamplerFromStringHistogram(hist *StringHistogram) func(string) (string, error) {
+func GetSamplerFromStringHistogram(hist StringHistogram) func(string) (string, error) {
 	samplers := make(map[string]*wr.Chooser)
-	for gram := range *hist {
-		nextGrams := (*hist)[gram]
+	for gram := range hist {
+		nextGrams := hist[gram]
 		choices := make([]wr.Choice, len(nextGrams))
 		i := 0
 		for key := range nextGrams {
-			// fmt.Println(i, key, (*hist)[key])
+			// fmt.Println(i, key, hist[key])
 			choices[i] = wr.Choice{
 				Item:   key,
 				Weight: uint(nextGrams[key]),
@@ -126,13 +126,13 @@ func GetSamplerFromStringHistogram(hist *StringHistogram) func(string) (string, 
 	}
 }
 
-func PrintStringHistogram(h *StringHistogram) {
-	for key := range *h {
-		fmt.Printf("%v: %v\n", key, (*h)[key])
+func PrintStringHistogram(hist StringHistogram) {
+	for key := range hist {
+		fmt.Printf("%v: %v\n", key, hist[key])
 	}
 }
 
-func LoadOrCreateHistogram(filename string, n int, lowercase bool, words bool) (*StringHistogram, error) {
+func LoadOrCreateHistogram(filename string, n int, lowercase bool, words bool) (StringHistogram, error) {
 	lowercaseString := ""
 	if lowercase {
 		lowercaseString = "lower"
@@ -155,7 +155,7 @@ func LoadOrCreateHistogram(filename string, n int, lowercase bool, words bool) (
 		if err != nil {
 			return nil, err
 		}
-		return &hist, nil
+		return hist, nil
 	} else if os.IsNotExist(err) {
 		// Build histogram and save cache
 		file, err := os.Open(filename)
@@ -173,7 +173,7 @@ func LoadOrCreateHistogram(filename string, n int, lowercase bool, words bool) (
 	return nil, err
 }
 
-func CacheHistogram(histogram *StringHistogram, filename string) error {
+func CacheHistogram(histogram StringHistogram, filename string) error {
 	file, err := os.Create(filename)
 	if err != nil {
 		return err
