@@ -8,7 +8,6 @@ import (
 	"io/ioutil"
 	"math/rand"
 	"os"
-	"runtime"
 	"strings"
 	"time"
 
@@ -16,58 +15,87 @@ import (
 	flag "github.com/spf13/pflag"
 )
 
+type StringHistogram = map[string]map[string]uint32
+
 func main() {
 
 	args := parseArgs()
-	seed := args.Prompt
 
 	rand.Seed(time.Now().UTC().UnixNano()) // always seed random!
-	hist, err := LoadOrCreateHistogram(args.InputFilename, args.N, args.Lowercase)
-	PanicOnError(err)
-	sample := GetSamplerFromStringHistogram(hist)
-	// PrintStringHistogram(hist)
-	// PrintMemUsage()
-	// runtime.GC()
-	for i := 0; i < args.MaxCharacters; i++ {
-		next, err := sample(seed[len(seed)-args.N:])
-		if err != nil {
-			break
-		}
-		seed += next
-	}
-	// PrintMemUsage()
-	fmt.Println(seed)
-}
-
-type StringHistogram = map[string]map[string]uint32
-
-func PanicOnError(err error) {
+	hist, err := LoadOrCreateHistogram(args.InputFilename, args.N, args.Lowercase, args.Words)
 	if err != nil {
 		panic(err)
 	}
+	sample := GetSamplerFromStringHistogram(hist)
+	generated := make([]string, 0, args.Max)
+	generated = append(generated, GetSeed(args.Prompt, args.N, args.Lowercase, args.Words, hist)...)
+	for i := 0; i < args.Max; i++ {
+		next, err := sample(generated[len(generated)-1])
+		if err != nil {
+			break
+		}
+		generated = append(generated, next)
+	}
+	fmt.Println(strings.Join(generated, GetSeparator(args.Words)))
 }
 
-func BuildStringHistogram(r io.Reader, n int, lowercase bool) *StringHistogram {
+// GetSeparator returns " " if words is true, "" otherwise
+func GetSeparator(words bool) string {
+	if words {
+		return " "
+	} else {
+		return ""
+	}
+}
+
+// GetSeed splits prompt into n-grams if prompt is usable or returns a random n-gram if not
+func GetSeed(prompt string, n int, lower bool, words bool, hist *StringHistogram) []string {
+	// If the prompt contains at least one n-gram's worth of text
+	if promptSplit := strings.Split(prompt, GetSeparator(words)); prompt != "" && len(promptSplit) >= 1 {
+		// And the ngram appears in the corpus histogram
+		if _, ok := (*hist)[promptSplit[len(promptSplit)-1]]; ok {
+			// Use the prompt as is
+			return promptSplit
+		}
+	}
+	var seed []string
+	// Use the first random ngram that contains at least one child
+	for randNgram := range *hist {
+		if len((*hist)[randNgram]) < 1 {
+			continue
+		}
+		seed = []string{randNgram}
+		break
+	}
+	return seed
+}
+
+func BuildStringHistogram(r io.Reader, n int, lowercase bool, words bool) *StringHistogram {
 	frequency := make(StringHistogram)
 	scanner := bufio.NewScanner(r)
-	scanner.Split(bufio.ScanRunes)
-	buf := make([]string, n)
+	separator := GetSeparator(words)
+	if words {
+		scanner.Split(bufio.ScanWords)
+	} else {
+		scanner.Split(bufio.ScanRunes)
+	}
+	buf := make([]string, 0, n)
 	for scanner.Scan() {
 		text := scanner.Text()
 		buf = append(buf, text)
-		if len(buf) > n*2+1 {
-			buf = buf[1:]
-			tmp := strings.Join(buf, "")
+		if len(buf) > n*2 {
+			gram := strings.Join(buf[0:n], separator)
+			nextGram := strings.Join(buf[n:len(buf)-1], separator)
 			if lowercase {
-				tmp = strings.ToLower(tmp)
+				gram = strings.ToLower(gram)
+				nextGram = strings.ToLower(nextGram)
 			}
-			gram := tmp[0:n]
-			nextGram := tmp[n : len(tmp)-1]
-			// fmt.Printf("lower: %v, gram: %v, nextGram: %v\n", lower, gram, nextGram)
+			// fmt.Printf("gram: %v, nextGram: %v\n", gram, nextGram)
 			if _, ok := frequency[gram]; !ok {
 				frequency[gram] = make(map[string]uint32)
 			}
 			frequency[gram][nextGram]++
+			buf = buf[1:]
 		}
 	}
 	return &frequency
@@ -104,12 +132,16 @@ func PrintStringHistogram(h *StringHistogram) {
 	}
 }
 
-func LoadOrCreateHistogram(filename string, n int, lowercase bool) (*StringHistogram, error) {
+func LoadOrCreateHistogram(filename string, n int, lowercase bool, words bool) (*StringHistogram, error) {
 	lowercaseString := ""
 	if lowercase {
 		lowercaseString = "lower"
 	}
-	cacheFilename := fmt.Sprintf("%v.cache.n%d%s.json", filename, n, lowercaseString)
+	wordsString := ""
+	if words {
+		wordsString = "words"
+	}
+	cacheFilename := fmt.Sprintf("%v.cache.n%d%s%s.json", filename, n, lowercaseString, wordsString)
 	cacheFile, err := os.Open(cacheFilename)
 	// Load from cache
 	if err == nil {
@@ -131,7 +163,7 @@ func LoadOrCreateHistogram(filename string, n int, lowercase bool) (*StringHisto
 			return nil, err
 		}
 		defer file.Close()
-		hist := BuildStringHistogram(file, n, lowercase)
+		hist := BuildStringHistogram(file, n, lowercase, words)
 		err = CacheHistogram(hist, cacheFilename)
 		if err != nil {
 			return nil, err
@@ -159,17 +191,19 @@ type arguments struct {
 	InputFilename string
 	Prompt        string
 	N             int
-	MaxCharacters int
+	Max           int
 	Lowercase     bool
+	Words         bool
 }
 
 func parseArgs() arguments {
-	corpusFilename := flag.StringP("corpus", "i", "", "The input corpus to build the n-gram histogram with.")
-	prompt := flag.StringP("prompt", "p", "hello", "The prompt to (optional).")
+	corpusFilename := flag.StringP("corpus", "i", "", "The input corpus to build the n-gram histogram with (required).")
+	prompt := flag.StringP("prompt", "p", "", "The prompt to use.")
 	n := flag.IntP("n-gram-length", "n", 3, "The number of characters to use for each n-gram.")
-	maxCharacters := flag.IntP("max-characters", "c", 1000, "The maximum number of characters to generate. Fewer characters may be generated if the sequence encounters an n-gram that has no next n-grams in the dataset.")
+	max := flag.IntP("max", "m", 1000, "The maximum number of n-gram tokens to generate. Fewer characters may begenerated if\nthe sequence encounters an n-gram that has no next n-grams in the dataset.")
 	help := flag.BoolP("help", "h", false, "Show this screen.")
-	lowercase := flag.BoolP("lowercase", "l", false, "Convert text to lowercase. Lowers the complexity of the sampling task, and may produce better results depending on the corpus.")
+	lowercase := flag.BoolP("lowercase", "l", false, "Convert text to lowercase. Lowers the complexity of the sampling task, and may produce\nbetter results depending on the corpus.")
+	words := flag.BoolP("words", "w", false, "Use word-level n-grams instead of character-level n-grams.")
 
 	flag.Parse()
 	if flag.NArg() != 0 || *help {
@@ -193,23 +227,8 @@ func parseArgs() arguments {
 		InputFilename: *corpusFilename,
 		Prompt:        *prompt,
 		N:             *n,
-		MaxCharacters: *maxCharacters,
+		Max:           *max,
 		Lowercase:     *lowercase,
+		Words:         *words,
 	}
-}
-
-// PrintMemUsage outputs the current, total and OS memory being used. As well as the number
-// of garage collection cycles completed.
-func PrintMemUsage() {
-	var m runtime.MemStats
-	runtime.ReadMemStats(&m)
-	// For info on each, see: https://golang.org/pkg/runtime/#MemStats
-	fmt.Printf("Alloc = %v MiB", bToMb(m.Alloc))
-	fmt.Printf("\tTotalAlloc = %v MiB", bToMb(m.TotalAlloc))
-	fmt.Printf("\tSys = %v MiB", bToMb(m.Sys))
-	fmt.Printf("\tNumGC = %v\n", m.NumGC)
-}
-
-func bToMb(b uint64) uint64 {
-	return b / 1024 / 1024
 }
