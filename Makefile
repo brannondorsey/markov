@@ -1,5 +1,5 @@
 NAME := markov
-MAIN_SRC := cmd/$(NAME)/main.go
+MAIN_SRC := cmd/$(NAME)/markov.go
 
 .PHONY: default build run clean install test coverage
 
