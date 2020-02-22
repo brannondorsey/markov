@@ -50,15 +50,27 @@ func GetSeparator(words bool) string {
 
 // GetSeed splits prompt into n-grams if prompt is usable or returns a random n-gram if not
 func GetSeed(prompt string, n int, lower bool, words bool, hist StringHistogram) []string {
+	var seed []string
+	separator := GetSeparator(words)
+	if lower {
+		prompt = strings.ToLower(prompt)
+	}
 	// If the prompt contains at least one n-gram's worth of text
-	if promptSplit := strings.Split(prompt, GetSeparator(words)); prompt != "" && len(promptSplit) >= 1 {
-		// And the ngram appears in the corpus histogram
-		if _, ok := hist[promptSplit[len(promptSplit)-1]]; ok {
-			// Use the prompt as is
-			return promptSplit
+	if promptSplit := strings.Split(prompt, separator); prompt != "" && len(promptSplit) >= n {
+		// Split it on the last n-gram
+		first := strings.Join(promptSplit[:len(promptSplit)-n], separator)
+		last := strings.Join(promptSplit[len(promptSplit)-n:], separator)
+		// fmt.Printf("first: %v, last: %v\n", first, last)
+		// And if the ngram appears in the corpus histogram
+		if _, ok := hist[last]; ok {
+			// Return []string{first, last}
+			if first != "" {
+				seed = append(seed, first)
+			}
+			seed = append(seed, last)
+			return seed
 		}
 	}
-	var seed []string
 	// Use the first random ngram that contains at least one child
 	for randNgram := range hist {
 		if len(hist[randNgram]) < 1 {
@@ -126,11 +138,11 @@ func GetSamplerFromStringHistogram(hist StringHistogram) func(string) (string, e
 	}
 }
 
-func PrintStringHistogram(hist StringHistogram) {
-	for key := range hist {
-		fmt.Printf("%v: %v\n", key, hist[key])
-	}
-}
+// func PrintStringHistogram(hist StringHistogram) {
+// 	for key := range hist {
+// 		fmt.Printf("%v: %v\n", key, hist[key])
+// 	}
+// }
 
 func LoadOrCreateHistogram(filename string, n int, lowercase bool, words bool) (StringHistogram, error) {
 	lowercaseString := ""

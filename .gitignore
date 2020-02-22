@@ -5,3 +5,4 @@ build/bin/*
 !build/bin/.gitkeep
 *.cache.n*.json
 uci-news-aggregator-dataset.txt
+test/coverage.out
