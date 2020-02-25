@@ -209,7 +209,6 @@ type arguments struct {
 }
 
 func parseArgs() arguments {
-	corpusFilename := flag.StringP("corpus", "i", "", "The input corpus to build the n-gram histogram with (required).")
 	prompt := flag.StringP("prompt", "p", "", "The prompt to use.")
 	n := flag.IntP("n-gram-length", "n", 3, "The number of characters to use for each n-gram.")
 	max := flag.IntP("max", "m", 1000, "The maximum number of n-gram tokens to generate. Fewer characters may begenerated if\nthe sequence encounters an n-gram that has no next n-grams in the dataset.")
@@ -218,7 +217,12 @@ func parseArgs() arguments {
 	words := flag.BoolP("words", "w", false, "Use word-level n-grams instead of character-level n-grams.")
 
 	flag.Parse()
-	if flag.NArg() != 0 || *help {
+	flag.Usage = func() {
+		fmt.Printf("Usage: %s [OPTIONS] <input-file> ...\n", os.Args[0])
+		fmt.Println("Note: <input-file> is a required positional argument.")
+		flag.PrintDefaults()
+	}
+	if flag.NArg() != 1 || *help {
 		flag.Usage()
 		os.Exit(1)
 	}
@@ -226,17 +230,17 @@ func parseArgs() arguments {
 		fmt.Printf("[ERROR] The value of --n-gram-length must be between 1 and 6. Received %d.\n", *n)
 		os.Exit(1)
 	}
-	if *corpusFilename == "" {
-		fmt.Printf("[ERROR] The --corpus flag is required.\n")
-		flag.Usage()
-		os.Exit(1)
-	}
-	if _, err := os.Stat(*corpusFilename); os.IsNotExist(err) {
-		fmt.Printf("[ERROR] Corpus file \"%s\" does not exist.\n", *corpusFilename)
+	inputFilename := flag.Args()[0]
+	if fileInfo, err := os.Stat(inputFilename); os.IsNotExist(err) || fileInfo.IsDir() {
+		if fileInfo != nil && fileInfo.IsDir() {
+			fmt.Printf("[ERROR] Input file \"%s\" must be a file, not a directory.\n", inputFilename)
+		} else {
+			fmt.Printf("[ERROR] Input file \"%s\" does not exist.\n", inputFilename)
+		}
 		os.Exit(1)
 	}
 	return arguments{
-		InputFilename: *corpusFilename,
+		InputFilename: inputFilename,
 		Prompt:        *prompt,
 		N:             *n,
 		Max:           *max,
